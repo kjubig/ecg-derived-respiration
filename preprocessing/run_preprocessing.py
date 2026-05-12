@@ -43,7 +43,7 @@ from preprocessing import (
 # ---------------------------------------------------------------------------
 RECORD_PATH = "../dataset/lk/CEBSDB/b001"
 OUT_NPZ     = "preprocessed/cebsdb_b001.npz"
-PLOTS_DIR   = "preprocessing"
+PLOTS_DIR   = "plots"
 
 os.makedirs("preprocessed", exist_ok=True)
 os.makedirs(PLOTS_DIR, exist_ok=True)

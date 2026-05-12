@@ -28,7 +28,7 @@ from scipy.stats import pearsonr
 # ---------------------------------------------------------------------------
 METHOD     = sys.argv[1] if len(sys.argv) > 1 else "svd"
 IN_RESULTS = f"results/{METHOD}_edr.npz"
-IN_DATA    = "preprocessed/cebsdb_b001.npz"
+IN_DATA    = "../preprocessing/preprocessed/cebsdb_b001.npz"
 OUT_DIR    = f"results"
 
 os.makedirs(OUT_DIR, exist_ok=True)

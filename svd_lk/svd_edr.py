@@ -36,7 +36,7 @@ from scipy.stats import pearsonr
 # ---------------------------------------------------------------------------
 # Konfiguracja
 # ---------------------------------------------------------------------------
-IN_NPZ   = "preprocessed/cebsdb_b001.npz"
+IN_NPZ   = "../preprocessing/preprocessed/cebsdb_b001.npz"
 OUT_NPZ  = "results/svd_edr.npz"
 OUT_PLOT = "results/svd_skladowe.png"
 
