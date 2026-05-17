@@ -4,6 +4,9 @@ Moduł: `preprocessing.py`
 Skrypt wykonawczy: `run_preprocessing.py`  
 Wynik: `preprocessed/cebsdb_b001.npz`
 
+> Wspólny preprocessing dla wszystkich metod: **SVD, PCA, ICA**.  
+> Każda metoda wczytuje ten sam plik `.npz` z identycznej macierzy cykli X.
+
 ---
 
 ## Dane wejściowe
@@ -27,17 +30,30 @@ Odczyt rekordu WFDB, ekstrakcja odprowadzenia II i referencyjnego sygnału oddec
 
 ### 2. Usunięcie dryfu linii bazowej
 
-Metoda: **dwa kolejne filtry medianowe** (Clifford & Tarassenko 2005, Varon et al. 2020).
+Metoda: **dwa kolejne filtry medianowe** (Charlton et al. 2018).
 
-| Filtr | Okno | Usuwa |
-|-------|------|-------|
-| Medianowy 1 | **200 ms** (1000 próbek) | QRS i załamek P — krótkie, ostre zdarzenia |
-| Medianowy 2 | **600 ms** (3000 próbek) | Załamek T — szersze zdarzenie |
+Filtr medianowy zastępuje każdą próbkę medianą z okna o zadanej szerokości. Kluczowa własność: jeśli okno jest **szersze niż trwające zdarzenie**, filtr go nie śledzi — wynik pozostaje zbliżony do linii bazowej bez tego zdarzenia.
 
-Wynik filtrów stanowi estymację linii bazowej, która jest **odejmowana** od sygnału.
+**Krok 1 — filtr 200 ms (1000 próbek):**
 
-> Dlaczego nie HP Butterworth?  
-> Filtry medianowe nie powodują zniekształceń fazowych w pobliżu QRS, co lepiej chroni morfologię sygnału potrzebną do delineacji fal i analizy SVD.
+Zespół QRS trwa ok. 80–120 ms, załamek P ok. 80–120 ms. Oba mieszczą się w całości wewnątrz okna 200 ms. Filtr medianowy nie podąża za tak krótkimi, ostrymi zdarzeniami — wynik zawiera linię bazową z załamkiem T, ale bez QRS i P.
+
+**Krok 2 — filtr 600 ms (3000 próbek):**
+
+Załamek T trwa ok. 150–400 ms. Po usunięciu QRS i P w kroku 1, drugi filtr z oknem 600 ms eliminuje również T — wynik to już tylko wolny dryft linii bazowej (ruch oddechowy, artefakty elektrodowe).
+
+| Filtr | Okno | Eliminuje z sygnału |
+|-------|------|----------------------|
+| Medianowy 1 | **200 ms** (1000 próbek) | QRS i załamek P |
+| Medianowy 2 | **600 ms** (3000 próbek) | Załamek T |
+| **Wynik** | — | estymacja dryfu linii bazowej |
+
+Estymacja dryfu jest następnie **odejmowana** od oryginalnego sygnału:
+
+$$\text{EKG}_{\text{bl}} = \text{EKG}_{\text{raw}} - \text{median}_2\bigl(\text{median}_1(\text{EKG}_{\text{raw}})\bigr)$$
+
+> Charlton et al. opisują usuwanie bardzo wolnych składowych przez filtr medianowy lub odjęcie trendu jako standardowy etap poprzedzający ekstrakcję cech oddechowych z EKG.
+> Filtry medianowe nie powodują zniekształceń fazowych w pobliżu QRS, co lepiej chroni morfologię sygnału potrzebną do delineacji fal.
 
 ---
 
@@ -45,8 +61,16 @@ Wynik filtrów stanowi estymację linii bazowej, która jest **odejmowana** od s
 
 **Butterworth 4. rzędu**, `fc = 40 Hz`, format SOS (`sosfiltfilt` — zero-phase).
 
-Usuwa szum mięśniowy (EMG) i zakłócenia sieciowe (50 Hz i harmoniczne).  
-Górna granica 40 Hz zachowuje pełną morfologię QRS istotną dla EDR.
+Po usunięciu dryfu sygnał może nadal zawierać:
+- **Szum mięśniowy (EMG)** — wysoka częstotliwość, 20–500 Hz, losowy charakter
+- **Zakłócenia sieciowe 50 Hz** i harmoniczne (100 Hz, 150 Hz, ...)
+- **Szum kwantyzacji** i inne artefakty wysokoczzęstotliwościowe
+
+Filtr Butterwortha 4. rzędu z `fc = 40 Hz` odcina wszystko powyżej, zachowując jednocześnie pełną zawartość spektralną QRS (dominujące częstotliwości 10–40 Hz).
+
+Użycie formatu **SOS** (`sosfiltfilt`) zamiast tradycyjnych współczynników b/a zapobiega niestabilności numerycznej przy wysokich rzędach filtra i niskich częstotliwościach odcięcia względem fs. `sosfiltfilt` stosuje filtr dwa razy (w przód i tył) — efekt zero-phase, brak przesunięcia fazowego.
+
+> Charlton et al. wymieniają 40 Hz jako typową częstotliwość odcięcia LP dla metod EDR opartych na cechach beat-by-beat, zapewniającą zachowanie zawartości zespołu QRS.
 
 ---
 
@@ -54,6 +78,8 @@ Górna granica 40 Hz zachowuje pełną morfologię QRS istotną dla EDR.
 
 R-piki wczytywane z adnotacji `.atr` (baza CEBSDB dostarcza ręcznie zweryfikowane adnotacje).  
 Dla nagrań bez adnotacji: `scipy.signal.find_peaks` z progiem 60% amplitudy i minimalną odległością 200 ms.
+
+> Charlton et al. wskazują detekcję R-pików jako kluczowy etap poprzedzający segmentację beat-by-beat i ekstrakcję cech oddechowych.
 
 Wyniki dla b001: **298 R-pików**, mediana RR = **914 ms** (65 uderzeń/min).
 
@@ -79,6 +105,8 @@ Każdy cykl EKG (od R-piku do kolejnego R-piku) jest **resamplowany** do mediany
 $$X \in \mathbb{R}^{N \times L}$$
 
 gdzie $N$ = liczba cykli, $L$ = mediana długości RR w próbkach.
+
+> Charlton et al. opisują resampling nieregularnego przebiegu beat-by-beat do stałej siatki czasowej jako standardowy krok umożliwiający analizę częstotliwościową. Guaragnella et al. (2019) stosują analogiczną segmentację beat-to-beat i konstrukcję macierzy uderzeń (Lead Beat Matrix) bezpośrednio przed SVD.
 
 Wyniki dla b001: **297 × 4570** (297 cykli, 914 ms każdy).
 
@@ -117,7 +145,7 @@ Macierz X jest bezpośrednim wejściem dla metod SVD / PCA / ICA.
 ## Uruchomienie
 
 ```powershell
-cd svd_lk
+cd preprocessing
 & "../.venv/Scripts/python.exe" run_preprocessing.py
 ```
 
@@ -125,6 +153,6 @@ cd svd_lk
 
 ## Literatura
 
-- Clifford G.D., Tarassenko L. (2005). *Quantifying errors in spectral estimates of HRV due to beat replacement and resampling.* IEEE Trans. Biomed. Eng.
-- Varon C. et al. (2020). *A comparative study of ECG-derived respiration techniques.* Medical & Biological Engineering & Computing.
-- Pan J., Tompkins W.J. (1985). *A real-time QRS detection algorithm.* IEEE Trans. Biomed. Eng.
+- Charlton P.H. et al. (2018). *Breathing rate estimation from the electrocardiogram and photoplethysmogram: A review.* IEEE Reviews in Biomedical Engineering, 11, 2–20.
+- Guaragnella C. et al. (2019). *ECG Beat-to-Beat Analysis Using Singular Value Decomposition.* (IEEE)
+- Kozia J. et al. (2018). *EMD-based QRS complex detection for ECG-derived respiration.*
