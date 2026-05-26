@@ -59,6 +59,7 @@ rr_edr         = float(r["rr_edr"])
 rr_resp        = float(r["rr_resp"])
 final_corr     = float(r["final_corr"])
 edr_signal     = r["edr_signal"]
+edr_filt       = r["edr_filt"]
 
 print(f"Metoda:          {METHOD.upper()}")
 print(f"Najlepsza skł.:  {METHOD.upper()}-{best_idx + 1}")
@@ -97,10 +98,10 @@ _save(fig, f"01_edr_vs_referencja.png")
 # ---------------------------------------------------------------------------
 # Wykres 2 — widmo mocy (PSD) w paśmie oddechowym
 # ---------------------------------------------------------------------------
-nperseg = min(64, len(edr_signal))
-f_edr,  psd_edr  = welch(edr_signal, fs=fs_edr, nperseg=nperseg)
+nperseg = min(64, len(edr_filt))
+f_edr,  psd_edr  = welch(edr_filt,  fs=fs_edr, nperseg=nperseg)
 f_resp, psd_resp = welch(resp_norm,  fs=fs_edr, nperseg=nperseg)
-mask_f = (f_edr >= 0.1) & (f_edr <= 0.5)
+mask_f = (f_edr >= 0.0666) & (f_edr <= 0.5)
 
 fig, ax = plt.subplots(figsize=(12, 5))
 ax.semilogy(f_edr[mask_f] * 60, psd_edr[mask_f],

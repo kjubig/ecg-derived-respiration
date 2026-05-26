@@ -30,7 +30,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import os
 from scipy.linalg import svd as scipy_svd
-from scipy.signal import welch
+from scipy.interpolate import interp1d
+from scipy.signal import welch, butter, sosfiltfilt
 from scipy.stats import pearsonr
 
 # ---------------------------------------------------------------------------
@@ -94,12 +95,40 @@ r_times = r_times[:n]
 mask   = ~np.isnan(resp_n)
 U_m    = U_n[mask]
 resp_m = resp_n[mask]
+t_m    = r_times[mask]
 
 # ---------------------------------------------------------------------------
-# Wybór składowej EDR — maksymalna korelacja z referencją
+# Interpolacja do regularnej siatki czasowej + filtr pasmowy 0.0666–0.5 Hz
+#   Krok 10–11 algorytmu: beat-by-beat (nieregularny) → stała siatka 4 Hz,
+#   następnie filtracja w paśmie oddechowym przed doborem składowej.
 # ---------------------------------------------------------------------------
+FS_INTERP = 4.0      # Hz — standard 4–10 Hz dla sygnałów beat-by-beat
+RESP_LO   = 0.0666   # Hz — ~4 odd/min
+RESP_HI   = 0.5      # Hz — 30 odd/min
+
+t_reg = np.arange(t_m[0], t_m[-1], 1.0 / FS_INTERP)
+
+def _interp(t_irr, y_irr, t_out):
+    f = interp1d(t_irr, y_irr, kind="cubic", bounds_error=False,
+                 fill_value=(float(y_irr[0]), float(y_irr[-1])))
+    return f(t_out)
+
+def _bandpass(sig):
+    sos = butter(4, [RESP_LO, RESP_HI], btype="band", fs=FS_INTERP, output="sos")
+    return sosfiltfilt(sos, sig)
+
+resp_reg  = _interp(t_m, resp_m, t_reg)
+resp_filt = _bandpass(resp_reg)
+
 n_components = min(20, U_m.shape[1])
-correlations = np.array([abs(pearsonr(U_m[:, k], resp_m)[0])
+U_filt = np.zeros((len(t_reg), n_components))
+for k in range(n_components):
+    U_filt[:, k] = _bandpass(_interp(t_m, U_m[:, k], t_reg))
+
+# ---------------------------------------------------------------------------
+# Wybór składowej EDR — maksymalna korelacja z referencją (sygnały filtrowane)
+# ---------------------------------------------------------------------------
+correlations = np.array([abs(pearsonr(U_filt[:, k], resp_filt)[0])
                          for k in range(n_components)])
 
 best_idx = int(np.argmax(correlations))
@@ -113,26 +142,27 @@ def normalize(x):
     lo, hi = x.min(), x.max()
     return (x - lo) / (hi - lo) if hi > lo else np.zeros_like(x)
 
-edr_raw  = U_n[:, best_idx]
-edr_norm  = normalize(edr_raw)
-resp_norm = normalize(resp_n)
+edr_raw  = U_n[:, best_idx]              # beat-domain (archiwum)
+edr_filt = U_filt[:, best_idx]           # regularna siatka, przefilt.
+edr_norm  = normalize(edr_filt)
+resp_norm = normalize(resp_filt)
 
-if pearsonr(edr_norm[mask], resp_norm[mask])[0] < 0:
+if pearsonr(edr_norm, resp_norm)[0] < 0:
     edr_norm = 1.0 - edr_norm
 
-final_corr, _ = pearsonr(edr_norm[mask], resp_norm[mask])
-print(f"Korelacja EDR z referencją: r = {final_corr:.3f}")
+final_corr, _ = pearsonr(edr_norm, resp_norm)
+print(f"Korelacja EDR z referencją (po filtracji): r = {final_corr:.3f}")
 
 # ---------------------------------------------------------------------------
 # Estymacja częstości oddechów (Welch PSD)
 # ---------------------------------------------------------------------------
-fs_edr  = 1.0 / np.mean(np.diff(r_times))
-nperseg = min(64, n)
+fs_edr  = FS_INTERP
+nperseg = min(64, len(t_reg))
 
-f_edr,  psd_edr  = welch(edr_raw,  fs=fs_edr, nperseg=nperseg)
-f_resp, psd_resp = welch(resp_n,   fs=fs_edr, nperseg=nperseg)
+f_edr,  psd_edr  = welch(edr_filt,  fs=fs_edr, nperseg=nperseg)
+f_resp, psd_resp = welch(resp_filt,  fs=fs_edr, nperseg=nperseg)
 
-mask_f = (f_edr >= 0.1) & (f_edr <= 0.5)
+mask_f = (f_edr >= 0.0666) & (f_edr <= 0.5)
 rr_edr  = f_edr[mask_f][np.argmax(psd_edr[mask_f])]  * 60
 rr_resp = f_resp[mask_f][np.argmax(psd_resp[mask_f])] * 60
 
@@ -154,8 +184,8 @@ axes[0].set_title("Energia składowych SVD — CEBSDB b001")
 axes[0].legend()
 axes[0].grid(True, alpha=0.3, axis="y")
 
-axes[1].plot(r_times, resp_norm, label="Referencja oddechowa", linewidth=1.4)
-axes[1].plot(r_times, edr_norm,  label=f"EDR  SVD-{best_idx+1}  (r={final_corr:.3f})",
+axes[1].plot(t_reg, resp_norm, label="Referencja oddechowa", linewidth=1.4)
+axes[1].plot(t_reg, edr_norm,  label=f"EDR  SVD-{best_idx+1}  (r={final_corr:.3f})",
              linewidth=1.2, linestyle="--")
 axes[1].set_xlabel("Czas [s]")
 axes[1].set_ylabel("Amplituda (znorm.)")
@@ -174,9 +204,11 @@ plt.close()
 np.savez(
     OUT_NPZ,
     edr_signal     = edr_raw,
+    edr_filt       = edr_filt,
     edr_norm       = edr_norm,
     resp_norm      = resp_norm,
-    r_times        = r_times,
+    r_times        = t_reg,
+    r_times_beats  = r_times,
     fs_edr         = np.array(fs_edr),
     best_idx       = np.array(best_idx),
     correlations   = correlations,
