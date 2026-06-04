@@ -16,7 +16,4 @@ __pycache__/
 # Środowisko wirtualne
 .venv/
 
-# Wyniki i dane przetworzone (generowane przez skrypty — nie commituj)
-preprocessing/preprocessed/
-preprocessing/plots/
-svd_lk/results/
+
