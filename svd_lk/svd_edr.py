@@ -70,6 +70,7 @@ X_centered = np.nan_to_num(X_centered)
 U, S, Vt = scipy_svd(X_centered, full_matrices=False, check_finite=False)
 
 variance_ratio = (S ** 2) / (S ** 2).sum() * 100
+
 print("\nUdział % w wariancji (pierwsze 10 składowych):")
 for k in range(10):
     print(f"  SVD-{k+1:02d}: {variance_ratio[k]:.2f}%")
