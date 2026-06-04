@@ -6,3 +6,17 @@ README_ang.md
 #*.hea
 #*.atr
 #*.breath
+
+# Python — bytecode i cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Środowisko wirtualne
+.venv/
+
+# Wyniki i dane przetworzone (generowane przez skrypty — nie commituj)
+preprocessing/preprocessed/
+preprocessing/plots/
+svd_lk/results/
