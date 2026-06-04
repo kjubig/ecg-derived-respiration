@@ -1,0 +1,140 @@
+% Wzory do prezentacji — SVD-EDR
+% Plik pomocniczy; wklej poszczególne fragmenty do slajdów Beamer.
+
+\documentclass[12pt]{article}
+\usepackage{amsmath}
+\usepackage[margin=2cm]{geometry}
+\usepackage{parskip}
+
+\title{Wzory SVD-EDR}
+\date{}
+
+\begin{document}
+\maketitle
+
+% -------------------------------------------------------------------
+\section*{Dekompozycja macierzy cykli}
+
+Macierz cykli po centrowaniu:
+\[
+  \tilde{X} = X - \bar{X},
+  \qquad \bar{X}_{i,j} = \frac{1}{N}\sum_{n=1}^{N} X_{n,j}
+\]
+
+\begin{itemize}
+  \item $X \in \mathbb{R}^{N \times L}$ — macierz cykli EKG; wiersz $n$ to próbki $n$-tego cyklu RR
+  \item $\bar{X}$ — uśredniona morfologia (średnia po wszystkich cyklach, osobno dla każdej chwili w cyklu)
+  \item $\tilde{X}$ — macierz odchyleń od średniej; usuwa stały kształt QRS, eksponuje zmienność między cyklami
+  \item $N = 297$ — liczba cykli RR; $L = 4570$ — liczba próbek na cykl (przy 5000 Hz)
+\end{itemize}
+
+Rozkład SVD:
+\[
+  \tilde{X} = U \cdot S \cdot V^{T},
+  \qquad
+  \tilde{X} \in \mathbb{R}^{N \times L},\;
+  U \in \mathbb{R}^{N \times K},\;
+  S \in \mathbb{R}^{K \times K},\;
+  V^{T} \in \mathbb{R}^{K \times L}
+\]
+
+\begin{itemize}
+  \item $K = \min(N, L) = 297$ — liczba składowych
+  \item $U$ — macierz lewych wektorów osobliwych; kolumna $U[:,k]$ to sygnał beat-by-beat $k$-tej składowej (jak amplituda wzorca zmienia się cykl po cyklu)
+  \item $S$ — macierz diagonalna wartości osobliwych $S_1 \geq S_2 \geq \ldots \geq S_K \geq 0$; im większa $S_k$, tym więcej wariancji wyjaśnia składowa $k$
+  \item $V^T$ — macierz prawych wektorów osobliwych; wiersz $V_k$ to wzorzec morfologiczny $k$-tej składowej (gdzie w cyklu RR składowa jest aktywna)
+\end{itemize}
+
+% -------------------------------------------------------------------
+\section*{Energia (udział w wariancji)}
+
+\[
+  \varepsilon_k = \frac{S_k^2}{\displaystyle\sum_{j=1}^{K} S_j^2} \times 100\%
+\]
+
+\begin{itemize}
+  \item $k$ — numer składowej, dla której liczymy energię (np.\ $k=1$ to SVD-1)
+  \item $S_k^2$ — energia $k$-tej składowej (kwadrat wartości osobliwej; energia $\propto$ amplituda$^2$)
+  \item $\sum_{j=1}^{K} S_j^2$ — całkowita energia macierzy $\tilde{X}$ (suma po wszystkich $K$ składowych)
+  \item $\varepsilon_k$ — procentowy udział składowej $k$ w łącznej zmienności danych
+\end{itemize}
+
+% -------------------------------------------------------------------
+\section*{Interpolacja do siatki regularnej}
+
+Kolumny $U[:,k]$ są spróbkowane nieregularnie (jedna wartość na cykl RR, odstępy $\approx 0{,}6$--$1{,}2$\,s).
+Interpolacja sześcienna do siatki $4\,\mathrm{Hz}$:
+\[
+  u_k(t) = \mathrm{interp\_cubic}\!\left(\,t_{\mathrm{beats}},\; U[:,k],\; t_{\mathrm{grid}}\,\right),
+  \qquad t_{\mathrm{grid}} = \left\{0,\,\tfrac{1}{4},\,\tfrac{2}{4},\,\ldots\right\}\,[\mathrm{s}]
+\]
+
+\begin{itemize}
+  \item $t_{\mathrm{beats}}$ — czasy kolejnych uderzeń serca (nieregularne, wyznaczone z załamków R)
+  \item $U[:,k]$ — wartości $k$-tej składowej w chwilach uderzeń (próbkowanie nieregularne)
+  \item $t_{\mathrm{grid}}$ — regularna siatka czasowa co $\tfrac{1}{4}$\,s ($= 4$\,Hz)
+  \item $u_k(t)$ — zinterpolowany sygnał na siatce regularnej; wymagany do filtracji cyfrowej
+\end{itemize}
+
+% -------------------------------------------------------------------
+\section*{Filtr pasmowoprzepustowy}
+
+Filtr Butterwortha 4.~rzędu (SOS), zakres oddechowy:
+\[
+  0{,}0666\,\mathrm{Hz} \;\leq\; f \;\leq\; 0{,}5\,\mathrm{Hz}
+  \qquad \Leftrightarrow \qquad
+  4\,\mathrm{odd/min} \;\leq\; f_{\mathrm{resp}} \;\leq\; 30\,\mathrm{odd/min}
+\]
+
+\begin{itemize}
+  \item Dolna granica $0{,}0666$\,Hz ($= \tfrac{1}{15}$\,Hz) odpowiada 4 oddechom na minutę — wolny oddech spoczynkowy
+  \item Górna granica $0{,}5$\,Hz odpowiada 30 oddechom na minutę — szybki oddech wysiłkowy
+  \item Filtr usuwa składowe stałe (dryft) oraz szybkie fluktuacje niezwiązane z oddychaniem
+  \item Format SOS (second-order sections) zapewnia stabilność numeryczną przy filtrowaniu zero-fazowym (\texttt{sosfiltfilt})
+\end{itemize}
+
+% -------------------------------------------------------------------
+\section*{Wybór składowej — korelacja z referencją}
+
+\[
+  r_k = \left|\,\mathrm{corr}\!\left(\tilde{u}_k,\; \mathrm{RESP}_{\mathrm{per\,cycle}}\right)\right|,
+  \qquad
+  k^{*} = \arg\max_{k}\; r_k
+\]
+
+\begin{itemize}
+  \item $\tilde{u}_k$ — zinterpolowany i przefiltrowany sygnał $k$-tej składowej (na siatce 4\,Hz)
+  \item $\mathrm{RESP}_{\mathrm{per\,cycle}}$ — referencyjny sygnał oddechowy (kanał RESP) uśredniony do jednej wartości na cykl RR, następnie zinterpolowany do tej samej siatki 4\,Hz
+  \item $r_k$ — bezwzględna wartość współczynnika korelacji Pearsona między składową a referencją
+  \item $k^{*}$ — numer składowej o najwyższej korelacji; to jest wybrany sygnał EDR
+\end{itemize}
+
+% -------------------------------------------------------------------
+\section*{Korekcja znaku i normalizacja}
+
+\[
+  \mathrm{EDR}(t) =
+  \mathrm{sgn}\!\left(\mathrm{corr}(\tilde{u}_{k^*},\,\mathrm{RESP})\right)
+  \cdot \frac{\tilde{u}_{k^*}(t) - \mu}{\sigma}
+\]
+
+\begin{itemize}
+  \item $\mathrm{sgn}(\cdot)$ — korekcja znaku: jeśli korelacja jest ujemna, sygnał jest odwrócony, by fazy wdechu/wydechu zgadzały się z referencją
+  \item $\mu,\, \sigma$ — średnia i odchylenie standardowe $\tilde{u}_{k^*}$; normalizacja do zakresu porównywalnego z referencją
+  \item $\mathrm{EDR}(t)$ — końcowy sygnał oddechowy wyprowadzony z EKG, gotowy do wyznaczenia częstości
+\end{itemize}
+
+% -------------------------------------------------------------------
+\section*{Częstość oddechowa (Welch PSD)}
+
+\[
+  f_{\mathrm{resp}} = \arg\max_{f \,\in\, [0{,}0666;\,0{,}5]\,\mathrm{Hz}} S_{\mathrm{EDR}}(f)
+\]
+
+\begin{itemize}
+  \item $S_{\mathrm{EDR}}(f)$ — gęstość widmowa mocy (PSD) sygnału EDR wyznaczona metodą Welcha
+  \item $\arg\max$ — częstotliwość, przy której PSD osiąga maksimum w paśmie oddechowym
+  \item Wynik przeliczany na oddechy na minutę: $f_{\mathrm{resp}}[\mathrm{/min}] = f_{\mathrm{resp}}[\mathrm{Hz}] \times 60$
+\end{itemize}
+
+\end{document}

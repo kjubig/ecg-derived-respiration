@@ -81,14 +81,17 @@ def load_bidmc(record_path: str) -> dict:
     Brak adnotacji R-pików — r_peaks = None (wykryj przez detect_r_peaks).
 
     Zwraca słownik z kluczami:
-        ecg, resp_ref, breath_samples, r_peaks (None), fs, duration
+        ecg1 (odprowadzenie V), ecg2 (odprowadzenie II),
+        ecg (alias ecg2, backward compat),
+        resp_ref, breath_samples, r_peaks (None), fs, duration
     """
     record     = wfdb.rdrecord(record_path)
     ann_breath = wfdb.rdann(record_path, "breath")
 
     fs            = record.fs
     resp_ref      = record.p_signal[:, 0]   # sygnał oddechowy (impedancja)
-    ecg           = record.p_signal[:, 4]   # EKG odprowadzenie II
+    ecg1          = record.p_signal[:, 2]   # EKG odprowadzenie V
+    ecg2          = record.p_signal[:, 4]   # EKG odprowadzenie II
     breath_samples = ann_breath.sample[::2]  # ręczne adnotacje oddechów
 
     print("=== BIDMC ===")
@@ -97,7 +100,8 @@ def load_bidmc(record_path: str) -> dict:
     print(f"  Czas nagrania:  {record.sig_len / fs:.1f} s")
     print(f"  Adnotacje oddechów: {len(breath_samples)}")
 
-    return dict(ecg=ecg, resp_ref=resp_ref,
+    return dict(ecg1=ecg1, ecg2=ecg2, ecg=ecg2,
+                resp_ref=resp_ref,
                 breath_samples=breath_samples,
                 r_peaks=None, fs=fs,
                 duration=record.sig_len / fs)
